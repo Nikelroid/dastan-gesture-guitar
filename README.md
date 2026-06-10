@@ -15,7 +15,7 @@ in-browser recording. All in **one dependency-free HTML file**.
 
 ## ▶ Play it live
 
-**[https://nikelroid.github.io/dastan-gesture-guitar/](https://nikelroid.github.io/dastan-gesture-guitar/)**
+**[https://kelidari.com/dastan-gesture-guitar/](https://kelidari.com/dastan-gesture-guitar/)**
 — no install needed. Allow camera access when asked (Chrome/Edge recommended).
 
 ## Run it locally
