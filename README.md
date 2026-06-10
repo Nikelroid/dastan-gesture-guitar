@@ -13,7 +13,12 @@ in-browser recording. All in **one dependency-free HTML file**.
 > Everything runs locally in your browser — no server, no build step, and no
 > video or audio ever leaves your machine.
 
-## Run it
+## ▶ Play it live
+
+**[https://nikelroid.github.io/dastan-gesture-guitar/](https://nikelroid.github.io/dastan-gesture-guitar/)**
+— no install needed. Allow camera access when asked (Chrome/Edge recommended).
+
+## Run it locally
 
 ```sh
 git clone https://github.com/Nikelroid/dastan-gesture-guitar.git
