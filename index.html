@@ -290,7 +290,8 @@
             <option value="minor">minor</option>
             <option value="harmonic">harmonic minor</option>
             <option value="major">major</option>
-            <option value="majb6">major +♭6 (Creep)</option>
+            <option value="majb6">major +♭6</option>
+            <option value="creep">Creep (maj +♭3 +♭6)</option>
             <option value="chromatic">chromatic — all notes</option>
           </select>
           <select id="melOct">
@@ -740,6 +741,7 @@ const SCALES={                                     // in-octave degrees
   major:[0,2,4,5,7,9,11],
   harmonic:[0,2,3,5,7,8,11],
   majb6:[0,2,4,5,7,8,9,11],                        // major + ♭6 — Creep's borrowed D#/Eb
+  creep:[0,2,3,4,5,7,8,9,11],                      // + ♭3 (Bb) too — covers the Cm phrases
   chromatic:[0,1,2,3,4,5,6,7,8,9,10,11],
 };
 const NOTE_NAMES=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
@@ -1551,8 +1553,8 @@ el.btnCreep.onclick=()=>{
   mel.on=true; el.melOn.checked=true;
   mel.inst='lead'; el.melInst.value='lead';
   mel.mode='snap'; el.melMode.value='snap';
-  mel.root=7; mel.scale='majb6'; mel.oct=3; mel.range=2;   // G major + the borrowed Eb
-  el.melRoot.value=7; el.melScale.value='majb6'; el.melOct.value=3; el.melRange.value=2;
+  mel.root=7; mel.scale='creep'; mel.oct=3; mel.range=2;   // G major + borrowed Bb and Eb
+  el.melRoot.value=7; el.melScale.value='creep'; el.melOct.value=3; el.melRange.value=2;
   mel.vol=0.6; el.melVol.value=60; el.melVolVal.textContent='60%';
   if(melVolNode) melVolNode.gain.value=mel.vol;
   melGateOff(); teardownSynth(); saveMel();
