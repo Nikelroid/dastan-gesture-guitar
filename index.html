@@ -345,6 +345,12 @@
               <option value="instant">instant</option>
             </select>
           </label>
+          <label class="toggle">Guitar
+            <select id="tone">
+              <option value="acoustic" selected>Acoustic</option>
+              <option value="electric">Electric</option>
+            </select>
+          </label>
         </div>
       </div>
     </div>
@@ -359,6 +365,7 @@
       <button data-preset="persian">Persian Pop (Am)</button>
       <button data-preset="major">Major Key (C)</button>
       <button data-preset="spanish">Spanish / Phrygian</button>
+      <button id="btnCreep" title="G · B · C · Cm — electric, 92 BPM, only 4 gestures active">🎬 Creep (Radiohead)</button>
     </div>
   </div>
 
@@ -505,7 +512,15 @@ const PRESETS = {
    AUDIO ENGINE
    ==================================================================== */
 let actx=null, master=null, strumBus=null, clickGain=null, recDest=null, micNode=null;
+let acOut=null, elOut=null;
 const bufCache = new Map();
+
+function applyTone(){
+  if(!acOut) return;
+  const elec = state.tone==='electric';
+  acOut.gain.value = elec?0:1;
+  elOut.gain.value = elec?0.8:0;
+}
 
 function ensureAudio(){
   if(actx){ if(actx.state==='suspended') actx.resume(); return; }
@@ -523,7 +538,7 @@ function ensureAudio(){
 
   strumBus = actx.createGain();
 
-  // acoustic "body": warm low-mid resonances, rolled-off highs
+  // --- acoustic "body": warm low-mid resonances, rolled-off highs
   const peak=(f,g,q)=>{const b=actx.createBiquadFilter(); b.type='peaking';
     b.frequency.value=f; b.gain.value=g; b.Q.value=q; return b;};
   const hshelf=actx.createBiquadFilter();
@@ -534,13 +549,30 @@ function ensureAudio(){
   for(const b of [peak(100,3.5,1.5), peak(205,2.5,1.8), peak(400,1.5,2), hshelf, lpf]){
     node.connect(b); node=b;
   }
-  node.connect(master);
+  acOut=actx.createGain();
+  node.connect(acOut); acOut.connect(master);
 
-  // light algorithmic reverb for room & air
+  // --- electric: light tube-style drive into a cab voicing
+  const pre=actx.createGain(); pre.gain.value=1.5;
+  const ws=actx.createWaveShaper();
+  const N=1024, curve=new Float32Array(N);
+  for(let i=0;i<N;i++){ const x=i/(N-1)*2-1; curve[i]=Math.tanh(2.4*x); }
+  ws.curve=curve; ws.oversample='2x';
+  const cabHp=actx.createBiquadFilter(); cabHp.type='highpass'; cabHp.frequency.value=85;
+  const cabLp=actx.createBiquadFilter(); cabLp.type='lowpass'; cabLp.frequency.value=4200; cabLp.Q.value=0.7;
+  const cabPk=peak(2400,2.5,1.2);                       // presence bump
+  strumBus.connect(pre); pre.connect(ws); ws.connect(cabHp);
+  cabHp.connect(cabPk); cabPk.connect(cabLp);
+  elOut=actx.createGain();
+  cabLp.connect(elOut); elOut.connect(master);
+
+  // light algorithmic reverb for room & air (fed by both tones)
   const conv = actx.createConvolver();
   conv.buffer = makeImpulse(1.9, 2.6);
   const wet = actx.createGain(); wet.gain.value = 0.18;
-  node.connect(conv); conv.connect(wet); wet.connect(master);
+  acOut.connect(conv); elOut.connect(conv);
+  conv.connect(wet); wet.connect(master);
+  applyTone();
 
   // metronome goes to speakers only — never into the recording
   clickGain = actx.createGain();
@@ -560,17 +592,19 @@ function makeImpulse(seconds, decay){
 
 /* Karplus–Strong pluck rendered into a cached buffer */
 function pluckBuffer(freq, kind){           // kind: 'n' normal, 'a' accent (brighter), 'm' muted
-  const key = `${freq.toFixed(1)}|${kind}`;
+  const elec = state.tone==='electric';
+  const key = `${freq.toFixed(1)}|${kind}|${elec?'e':'a'}`;
   if(bufCache.has(key)) return bufCache.get(key);
   const sr = actx.sampleRate;
   const muted = kind==='m';
-  const dur = muted ? 0.14 : Math.min(3.0, Math.max(1.1, 260/freq));
+  const dur = muted ? 0.14 : Math.min(elec?4.0:3.0, Math.max(1.1, (elec?340:260)/freq));
   const n = Math.max(2, Math.round(sr/freq));
   const len = Math.floor(sr*dur);
   const data = new Float32Array(len);
   const ring = new Float32Array(n);
   // exciter: doubly-lowpassed noise = a soft fingertip/pick, not a metallic snap
-  const bright = kind==='a' ? 0.58 : 0.40;
+  // (electric: harder pick, brighter attack)
+  const bright = elec ? (kind==='a'?0.88:0.68) : (kind==='a'?0.58:0.40);
   let lp1=0, lp2=0;
   for(let i=0;i<n;i++){
     const w=Math.random()*2-1;
@@ -584,7 +618,7 @@ function pluckBuffer(freq, kind){           // kind: 'n' normal, 'a' accent (bri
   let mean=0;
   for(let i=0;i<n;i++) mean+=ring[i];
   mean/=n; for(let i=0;i<n;i++) ring[i]-=mean;
-  const damp = muted ? 0.86 : 0.996;
+  const damp = muted ? 0.86 : (elec ? 0.9978 : 0.996);   // electric strings ring longer
   let idx=0;
   for(let i=0;i<len;i++){
     const cur=ring[idx], nxt=ring[(idx+1)%n];
@@ -608,7 +642,8 @@ function playPluck(freq, vel, when, kind, pan){
   src.buffer=pluckBuffer(freq, kind);
   src.playbackRate.value=1+(Math.random()-0.5)*0.003;   // organic micro-detune
   const tone=actx.createBiquadFilter();                 // soft strokes sound darker
-  tone.type='lowpass'; tone.frequency.value=1500+vel*3600; tone.Q.value=0.2;
+  tone.type='lowpass'; tone.Q.value=0.2;
+  tone.frequency.value = state.tone==='electric' ? 2300+vel*4200 : 1500+vel*3600;
   const g=actx.createGain();
   const t0=Math.max(when, actx.currentTime);
   g.gain.setValueAtTime(0.0001, t0);                    // 4 ms attack — no click
@@ -822,6 +857,7 @@ const state = {
   chord:null, gesture:null, holdChord:true,
   chordQuant:'half',                 // 'instant' | 'half' | 'bar'
   pendingChord:null,                 // waiting for the next quantize point
+  tone:'acoustic',                   // 'acoustic' | 'electric'
 };
 const sched = { barStart:0, evIdx:0, events:[], timer:null, look:0.14, applied:new Set() };
 const uiEvents = [];                        // {time,type} consumed by rAF for flashes
@@ -1245,7 +1281,8 @@ const el = {};
  'btnCam','camPill','camSelect','chordNow','beatDots','strumInd','gestureBadge','badgeIcon',
  'badgeChord','badgeGesture','btnTap','toast',
  'sheetIn','btnSheet','btnSheetClear','sheetSummary','sheetMap','sheetView','sheetMode','quant',
- 'melOn','melInst','melHand','melRoot','melScale','melOct','melVol','melVolVal','melMode','melRange']
+ 'melOn','melInst','melHand','melRoot','melScale','melOct','melVol','melVolVal','melMode','melRange',
+ 'tone','btnCreep']
  .forEach(id=>el[id]=document.getElementById(id));
 
 let slotChords = [...PRESETS.persian];
@@ -1459,6 +1496,31 @@ el.btnSheetClear.onclick=()=>{
 };
 el.sheetMode.onchange=renderSheetView;
 el.quant.onchange=()=>{ state.chordQuant=el.quant.value; };
+
+/* ---- guitar tone ---- */
+try{ const t=localStorage.getItem('dastan.tone'); if(t==='electric'||t==='acoustic') state.tone=t; }catch(e){}
+el.tone.value=state.tone;
+el.tone.onchange=()=>{
+  state.tone=el.tone.value;
+  applyTone();
+  try{ localStorage.setItem('dastan.tone', state.tone); }catch(e){}
+};
+
+/* ---- 🎬 Creep performance preset ---- */
+el.btnCreep.onclick=()=>{
+  slotChords=['G','B','C','Cm','Em','D','Am','D7'];
+  slotEnabled=[true,true,true,true,false,false,false,false];
+  saveSlots();
+  buildGestureSlots();
+  state.tone='electric'; el.tone.value='electric'; applyTone();
+  try{ localStorage.setItem('dastan.tone','electric'); }catch(e){}
+  selectPattern(PATTERNS.find(p=>p.id==='folk44'), false);   // 92 BPM
+  el.quant.value='half'; state.chordQuant='half';
+  mel.root=7; mel.scale='major'; mel.oct=4;                  // G major lead, if you use it
+  el.melRoot.value=7; el.melScale.value='major'; el.melOct.value=4; saveMel();
+  setChord('G','fist');
+  toast('Creep ready 🎬 ✊G → ☝B → ✌C → 🤟Cm · electric · 92 BPM · 2 bars each');
+};
 
 /* ---- melody hand wiring ---- */
 el.melRoot.innerHTML=NOTE_NAMES.map((n,i)=>`<option value="${i}" ${i===9?'selected':''}>${n}</option>`).join('');
