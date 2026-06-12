@@ -290,6 +290,8 @@
             <option value="minor">minor</option>
             <option value="harmonic">harmonic minor</option>
             <option value="major">major</option>
+            <option value="majb6">major +♭6 (Creep)</option>
+            <option value="chromatic">chromatic — all notes</option>
           </select>
           <select id="melOct">
             <option value="3" selected>low</option>
@@ -733,17 +735,23 @@ const INSTRUMENTS={
   otamatone:{name:'Otamatone', oscs:[['square',.45]], lp:2800, q:.8, bp:{f:1100,q:1.6},
              attack:.03, release:.10, vibRate:6.0, vibCents:14, glide:.13, breath:0},
 };
-const SCALES={ minor:[0,2,3,5,7,8,10,12], major:[0,2,4,5,7,9,11,12], harmonic:[0,2,3,5,7,8,11,12] };
+const SCALES={                                     // in-octave degrees
+  minor:[0,2,3,5,7,8,10],
+  major:[0,2,4,5,7,9,11],
+  harmonic:[0,2,3,5,7,8,11],
+  majb6:[0,2,4,5,7,8,9,11],                        // major + ♭6 — Creep's borrowed D#/Eb
+  chromatic:[0,1,2,3,4,5,6,7,8,9,10,11],
+};
 const NOTE_NAMES=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 /* snap lanes span the WHOLE selected range: 1 octave → 8 notes, 2 → 15, 3 → 22 */
 function laneOffsets(){
-  const deg=SCALES[mel.scale].slice(0,7);
+  const deg=SCALES[mel.scale];
   const out=[];
   for(let o=0;o<mel.range;o++) deg.forEach(d=>out.push(d+12*o));
   out.push(12*mel.range);
   return out;
 }
-function laneCount(){ return mel.range*7+1; }
+function laneCount(){ return SCALES[mel.scale].length*mel.range+1; }
 
 const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol:0.55,
             mode:'snap', range:2,                       // 'snap' = one clean note per lane
@@ -1543,8 +1551,8 @@ el.btnCreep.onclick=()=>{
   mel.on=true; el.melOn.checked=true;
   mel.inst='lead'; el.melInst.value='lead';
   mel.mode='snap'; el.melMode.value='snap';
-  mel.root=7; mel.scale='major'; mel.oct=3; mel.range=2;
-  el.melRoot.value=7; el.melScale.value='major'; el.melOct.value=3; el.melRange.value=2;
+  mel.root=7; mel.scale='majb6'; mel.oct=3; mel.range=2;   // G major + the borrowed Eb
+  el.melRoot.value=7; el.melScale.value='majb6'; el.melOct.value=3; el.melRange.value=2;
   mel.vol=0.6; el.melVol.value=60; el.melVolVal.textContent='60%';
   if(melVolNode) melVolNode.gain.value=mel.vol;
   melGateOff(); teardownSynth(); saveMel();
