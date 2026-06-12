@@ -1515,7 +1515,7 @@ el.btnCreep.onclick=()=>{
   state.tone='electric'; el.tone.value='electric'; applyTone();
   try{ localStorage.setItem('dastan.tone','electric'); }catch(e){}
   selectPattern(PATTERNS.find(p=>p.id==='folk44'), false);   // 92 BPM
-  el.quant.value='half'; state.chordQuant='half';
+  el.quant.value='bar'; state.chordQuant='bar';              // Creep changes land on downbeats
   mel.root=7; mel.scale='major'; mel.oct=4;                  // G major lead, if you use it
   el.melRoot.value=7; el.melScale.value='major'; el.melOct.value=4; saveMel();
   setChord('G','fist');
