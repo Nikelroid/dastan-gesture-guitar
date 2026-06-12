@@ -253,6 +253,7 @@
       <div class="ctl">
         <label>Instrument</label>
         <select id="melInst">
+          <option value="lead">✨ Smooth Lead</option>
           <option value="sax">🎷 Saxophone</option>
           <option value="violin">🎻 Violin</option>
           <option value="harmonica">Harmonica</option>
@@ -512,7 +513,7 @@ const PRESETS = {
    AUDIO ENGINE
    ==================================================================== */
 let actx=null, master=null, strumBus=null, clickGain=null, recDest=null, micNode=null;
-let acOut=null, elOut=null;
+let acOut=null, elOut=null, reverbIn=null;
 const bufCache = new Map();
 
 function applyTone(){
@@ -572,6 +573,7 @@ function ensureAudio(){
   const wet = actx.createGain(); wet.gain.value = 0.18;
   acOut.connect(conv); elOut.connect(conv);
   conv.connect(wet); wet.connect(master);
+  reverbIn = conv;
   applyTone();
 
   // metronome goes to speakers only — never into the recording
@@ -718,6 +720,8 @@ function rasgueado(chordName, vel, when){
    MELODY SYNTH — monophonic lead for the second hand
    ==================================================================== */
 const INSTRUMENTS={
+  lead:     {name:'Smooth Lead', oscs:[['triangle',.5],['sine',.32]], lp:2100, q:.6,
+             attack:.10, release:.45, vibRate:5.0, vibCents:6,  glide:.10, breath:0},
   sax:      {name:'Saxophone', oscs:[['sawtooth',.5],['square',.20]], lp:1900, q:1.1,
              attack:.07, release:.18, vibRate:5.5, vibCents:7,  glide:.06, breath:.16},
   violin:   {name:'Violin',    oscs:[['sawtooth',.42],['sawtooth',.42,8]], lp:2600, q:1.0,
@@ -731,7 +735,15 @@ const INSTRUMENTS={
 };
 const SCALES={ minor:[0,2,3,5,7,8,10,12], major:[0,2,4,5,7,9,11,12], harmonic:[0,2,3,5,7,8,11,12] };
 const NOTE_NAMES=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
-const MEL_LANES=8;
+/* snap lanes span the WHOLE selected range: 1 octave → 8 notes, 2 → 15, 3 → 22 */
+function laneOffsets(){
+  const deg=SCALES[mel.scale].slice(0,7);
+  const out=[];
+  for(let o=0;o<mel.range;o++) deg.forEach(d=>out.push(d+12*o));
+  out.push(12*mel.range);
+  return out;
+}
+function laneCount(){ return mel.range*7+1; }
 
 const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol:0.55,
             mode:'snap', range:2,                       // 'snap' = one clean note per lane
@@ -739,13 +751,22 @@ const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol
 let syn=null, melVolNode=null;
 
 function melCfg(){ return INSTRUMENTS[mel.inst]; }
-function zoneMidi(z){ return (mel.oct+1)*12 + mel.root + SCALES[mel.scale][z]; }
+function zoneMidi(z){ return (mel.oct+1)*12 + mel.root + laneOffsets()[z]; }
 function zoneFreq(z){ return 440*Math.pow(2,(zoneMidi(z)-69)/12); }
 function zoneName(z){ const m=zoneMidi(z); return NOTE_NAMES[m%12]+(Math.floor(m/12)-1); }
 
 function buildSynth(){
   const cfg=melCfg();
-  if(!melVolNode){ melVolNode=actx.createGain(); melVolNode.gain.value=mel.vol; melVolNode.connect(master); }
+  if(!melVolNode){
+    melVolNode=actx.createGain(); melVolNode.gain.value=mel.vol;
+    melVolNode.connect(master);
+    melVolNode.connect(reverbIn);                       // shared room reverb
+    const dly=actx.createDelay(1); dly.delayTime.value=0.34;   // gentle echo = "expensive" lead
+    const fb=actx.createGain(); fb.gain.value=0.30;
+    const dWet=actx.createGain(); dWet.gain.value=0.22;
+    melVolNode.connect(dly); dly.connect(fb); fb.connect(dly);
+    dly.connect(dWet); dWet.connect(master); dWet.connect(reverbIn);
+  }
   const env=actx.createGain(); env.gain.value=0.0001;
   const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=cfg.lp; lp.Q.value=cfg.q;
   let chainIn=lp, chainOut=lp;
@@ -826,8 +847,9 @@ function melodyFrame(h){
     mel.curZone=-1;
     return {mode:'free', frac, freq};
   }
-  const pos=frac*MEL_LANES;
-  let z=Math.min(MEL_LANES-1,Math.floor(pos));
+  const N=laneCount();
+  const pos=frac*N;
+  let z=Math.min(N-1,Math.floor(pos));
   if(mel.curZone>=0 && z!==mel.curZone){
     const f=pos-z;
     if(z>mel.curZone && f<0.18) z=mel.curZone;
@@ -1155,9 +1177,10 @@ function drawOverlay(chordLm, st, melLm, melInfo){
     const zone = melInfo?.zone ?? -1;
     const w=72, x0 = mel.hand==='left' ? 0 : cv.width-w;
     c.fillStyle='rgba(10,13,18,.38)'; c.fillRect(x0,0,w,cv.height);
-    for(let r=0;r<MEL_LANES;r++){
-      const z=MEL_LANES-1-r;                                   // top lane = highest note
-      const yT=cv.height*(0.08+0.84*r/MEL_LANES), hL=cv.height*0.84/MEL_LANES;
+    const N=laneCount();
+    for(let r=0;r<N;r++){
+      const z=N-1-r;                                           // top lane = highest note
+      const yT=cv.height*(0.08+0.84*r/N), hL=cv.height*0.84/N;
       if(z===zone){ c.fillStyle='rgba(240,179,94,.30)'; c.fillRect(x0,yT,w,hL); }
       c.strokeStyle='rgba(255,255,255,.14)';
       c.strokeRect(x0+.5,yT+.5,w-1,hL-1);
@@ -1516,10 +1539,17 @@ el.btnCreep.onclick=()=>{
   try{ localStorage.setItem('dastan.tone','electric'); }catch(e){}
   selectPattern(PATTERNS.find(p=>p.id==='folk44'), false);   // 92 BPM
   el.quant.value='bar'; state.chordQuant='bar';              // Creep changes land on downbeats
-  mel.root=7; mel.scale='major'; mel.oct=4;                  // G major lead, if you use it
-  el.melRoot.value=7; el.melScale.value='major'; el.melOct.value=4; saveMel();
+  // left hand: smooth lead in G major, G3–G5 — covers Creep's whole vocal melody
+  mel.on=true; el.melOn.checked=true;
+  mel.inst='lead'; el.melInst.value='lead';
+  mel.mode='snap'; el.melMode.value='snap';
+  mel.root=7; mel.scale='major'; mel.oct=3; mel.range=2;
+  el.melRoot.value=7; el.melScale.value='major'; el.melOct.value=3; el.melRange.value=2;
+  mel.vol=0.6; el.melVol.value=60; el.melVolVal.textContent='60%';
+  if(melVolNode) melVolNode.gain.value=mel.vol;
+  melGateOff(); teardownSynth(); saveMel();
   setChord('G','fist');
-  toast('Creep ready 🎬 ✊G → ☝B → ✌C → 🤟Cm · electric · 92 BPM · 2 bars each');
+  toast('Creep ready 🎬 ✊G ☝B ✌C 🤟Cm · electric · left hand: Smooth Lead in G');
 };
 
 /* ---- melody hand wiring ---- */
