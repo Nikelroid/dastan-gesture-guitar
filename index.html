@@ -777,7 +777,7 @@ function laneCount(){
 }
 
 /* hollow wheel geometry, in height-fraction units (drawing and gating share these) */
-const WHEEL={ RO:0.40, RI:0.20, onR:0.215, offR:0.18, stopR:0.43 };
+const WHEEL={ RO:0.40, RI:0.20, onR:0.215, offR:0.18, stopR:0.43, CY:0.42 };
 const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol:0.55,
             mode:'snap', range:2,                       // 'snap' = one clean note per lane
             custom:'', customMidis:[],                  // user-defined note ring
@@ -901,7 +901,7 @@ function melodyFrame(h){
     const fx=1-h.lm[8].x, fy=h.lm[8].y;        // mirrored display coords
     mel.emaX  = mel.emaX==null  ? fx : mel.emaX +0.55*(fx-mel.emaX);
     mel.emaCY = mel.emaCY==null ? fy : mel.emaCY+0.55*(fy-mel.emaCY);
-    const cx = mel.hand==='left'?0.28:0.72, cy=0.5;
+    const cx = mel.hand==='left'?0.28:0.72, cy=WHEEL.CY;
     const dx=(mel.emaX-cx)*asp, dy=mel.emaCY-cy;
     const d=Math.hypot(dx,dy);
     if(mel.gate ? d<WHEEL.offR : d<WHEEL.onR){
@@ -1255,7 +1255,7 @@ function drawOverlay(chordLm, st, melLm, melInfo){
     const zone = melInfo?.zone ?? -1;
     const N=laneCount();
     const M=Math.min(cv.height,cv.width);
-    const cx=(mel.hand==='left'?0.28:0.72)*cv.width, cy=0.5*cv.height;
+    const cx=(mel.hand==='left'?0.28:0.72)*cv.width, cy=WHEEL.CY*cv.height;
     const R=M*WHEEL.RO, Ri=M*WHEEL.RI, step=Math.PI*2/N;
     c.save();
     // hollow band — the empty centre is the silent "air" for jumping between notes
