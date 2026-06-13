@@ -325,7 +325,7 @@
       </div>
     </div>
     <div class="kbd-help" style="margin-top:9px">
-      Raise or lower your other hand to pick the note — it <b>snaps to the scale</b>, one clean note per lane, gliding smoothly between them. The note sounds <b>only while your index finger is up</b>: lower it and the sound stops instantly, flick it to articulate notes (its fingertip glows gold while sounding). Want every microtone and your own hand vibrato instead? Switch Pitch mode to <i>Continuous</i> and a semitone ruler with a live tuner readout (<b>A4 +12¢</b>) appears. The melody hand is drawn in blue and never triggers chords.
+      <b>Bar strip:</b> raise/lower your hand to pick the note; it sounds only while your <b>index finger is up</b>. <b>Circle wheel:</b> notes are slices of a hollow ring — the empty centre is silence, so rest your hand in the middle, push <b>outward into a slice</b> to play it, and pull back in to stop or to <b>jump over notes without sounding them</b> (like lifting your hand off a piano). No finger rules on the wheel — radius is the articulation. Switch Pitch mode to <i>Continuous</i> for every microtone with a live tuner. The melody hand is drawn in blue and never triggers chords.
     </div>
   </div>
 
@@ -776,6 +776,8 @@ function laneCount(){
   return SCALES[mel.scale].length*mel.range+1;
 }
 
+/* hollow wheel geometry, in height-fraction units (drawing and gating share these) */
+const WHEEL={ RO:0.40, RI:0.20, onR:0.215, offR:0.18 };
 const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol:0.55,
             mode:'snap', range:2,                       // 'snap' = one clean note per lane
             custom:'', customMidis:[],                  // user-defined note ring
@@ -868,12 +870,14 @@ function melodyFrame(h){
   if(!mel.on) return null;
   if(!h){ if(++mel.lost>8) melGateOff(); return null; }
   mel.lost=0;
-  const st=fingerStates(h.lm);
-  // articulation: the note plays only while the INDEX finger is up.
-  // Lower it (or make a fist) and the sound stops — flick it for staccato.
-  // Off needs 2 consecutive frames so a single misread frame can't cut a note.
-  if(!st.ext[0]){ if(++mel.fingerDown>=2) melGateOff(); return null; }
-  mel.fingerDown=0;
+  const circleMode = mel.mode==='snap' && mel.layout==='circle';
+  if(!circleMode){
+    // bar/free articulation: the note plays only while the INDEX finger is up.
+    // (The circle wheel gates by radius instead — the hollow centre is silence.)
+    const st=fingerStates(h.lm);
+    if(!st.ext[0]){ if(++mel.fingerDown>=2) melGateOff(); return null; }
+    mel.fingerDown=0;
+  }
   const y=h.lm[9].y;
   const alpha = mel.mode==='free' ? 0.5 : 0.35;
   mel.emaY = mel.emaY==null ? y : mel.emaY+alpha*(y-mel.emaY);
@@ -888,14 +892,20 @@ function melodyFrame(h){
   }
   const N=laneCount();
   if(mel.layout==='circle'){
-    // circle wheel: the hand's ANGLE around a fixed centre picks the slice.
-    // 12 o'clock = first note, ascending clockwise.
+    // hollow wheel: ANGLE picks the slice, RADIUS is the articulation.
+    // Hand in the empty centre = silence (your "air" for jumping over notes);
+    // push outward into a slice = the note attacks, with no passing notes.
     const v=el.video;
     const asp=(v.videoWidth&&v.videoHeight)?v.videoWidth/v.videoHeight:16/9;
     const x=1-h.lm[9].x;                       // mirrored display coords
     mel.emaX = mel.emaX==null ? x : mel.emaX+0.5*(x-mel.emaX);
     const cx = mel.hand==='left'?0.28:0.72, cy=0.5;
     const dx=(mel.emaX-cx)*asp, dy=mel.emaY-cy;
+    const d=Math.hypot(dx,dy);
+    if(mel.gate ? d<WHEEL.offR : d<WHEEL.onR){   // inside the hole (with hysteresis)
+      melGateOff();
+      return {mode:'snap', zone:-1};
+    }
     let ang=Math.atan2(dx,-dy); if(ang<0) ang+=Math.PI*2;
     let z=Math.min(N-1, Math.floor(ang/(Math.PI*2/N)));
     // temporal hysteresis: a new slice must persist 3 frames before it sounds
@@ -1236,29 +1246,38 @@ function drawOverlay(chordLm, st, melLm, melInfo){
   }else if(mel.on && mel.layout==='circle'){
     const zone = melInfo?.zone ?? -1;
     const N=laneCount();
+    const M=Math.min(cv.height,cv.width);
     const cx=(mel.hand==='left'?0.28:0.72)*cv.width, cy=0.5*cv.height;
-    const R=Math.min(cv.height,cv.width)*0.31, step=Math.PI*2/N;
+    const R=M*WHEEL.RO, Ri=M*WHEEL.RI, step=Math.PI*2/N;
     c.save();
-    c.fillStyle='rgba(10,13,18,.42)';
-    c.beginPath(); c.arc(cx,cy,R,0,7); c.fill();
+    // hollow band — the empty centre is the silent "air" for jumping between notes
+    c.fillStyle='rgba(10,13,18,.45)';
+    c.beginPath(); c.arc(cx,cy,R,0,7); c.arc(cx,cy,Ri,0,7,true); c.fill();
     c.textAlign='center'; c.textBaseline='middle';
     for(let i=0;i<N;i++){
       const a0=-Math.PI/2+i*step, a1=a0+step, am=(a0+a1)/2;
       if(i===zone && mel.gate){
-        c.fillStyle='rgba(240,179,94,.34)';
-        c.beginPath(); c.moveTo(cx,cy); c.arc(cx,cy,R,a0,a1); c.closePath(); c.fill();
+        c.fillStyle='rgba(240,179,94,.36)';
+        c.beginPath(); c.arc(cx,cy,R,a0,a1); c.arc(cx,cy,Ri,a1,a0,true);
+        c.closePath(); c.fill();
       }
-      c.strokeStyle='rgba(255,255,255,.17)'; c.lineWidth=1;
-      c.beginPath(); c.moveTo(cx,cy);
-      c.lineTo(cx+R*Math.cos(a0), cy+R*Math.sin(a0)); c.stroke();
-      c.fillStyle = i===zone ? '#f0b35e' : 'rgba(255,255,255,.78)';
-      c.font=`${i===zone?'bold 15px':'12.5px'} Inter,sans-serif`;
-      c.fillText(zoneName(i), cx+R*0.72*Math.cos(am), cy+R*0.72*Math.sin(am));
+      c.strokeStyle='rgba(255,255,255,.18)'; c.lineWidth=1;
+      c.beginPath();
+      c.moveTo(cx+Ri*Math.cos(a0), cy+Ri*Math.sin(a0));
+      c.lineTo(cx+R*Math.cos(a0),  cy+R*Math.sin(a0)); c.stroke();
+      const tr=(R+Ri)/2;
+      c.fillStyle = i===zone ? '#f0b35e' : 'rgba(255,255,255,.82)';
+      c.font=`${i===zone?'bold 16px':'13px'} Inter,sans-serif`;
+      c.fillText(zoneName(i), cx+tr*Math.cos(am), cy+tr*Math.sin(am));
     }
     c.strokeStyle='rgba(240,179,94,.55)'; c.lineWidth=2;
     c.beginPath(); c.arc(cx,cy,R,0,7); c.stroke();
-    c.fillStyle='rgba(240,179,94,.6)';
-    c.beginPath(); c.arc(cx,cy,3.5,0,7); c.fill();
+    c.strokeStyle = mel.gate ? 'rgba(240,179,94,.35)' : 'rgba(255,255,255,.30)';
+    c.beginPath(); c.arc(cx,cy,Ri,0,7); c.stroke();
+    if(!mel.gate){
+      c.fillStyle='rgba(255,255,255,.45)'; c.font='11px Inter,sans-serif';
+      c.fillText('rest', cx, cy);
+    }
     c.restore();
   }else if(mel.on){
     const zone = melInfo?.zone ?? -1;
@@ -1634,9 +1653,9 @@ el.btnCreep.onclick=()=>{
   el.melRoot.value=7; el.melScale.value='creep'; el.melOct.value=3; el.melRange.value=2;
   mel.vol=0.6; el.melVol.value=60; el.melVolVal.textContent='60%';
   if(melVolNode) melVolNode.gain.value=mel.vol;
-  if(!mel.custom) el.melCustom.value='F#4 G4 A4 B4 C5 D5 Eb5';   // suggested chorus ring
+  el.melCustom.value='D#4 E4 F#4 G4 A4 A#4 B4 C5';               // performance ring
   applyRing();                                                    // activate the ring…
-  mel.layout='circle'; el.melLayout.value='circle';               // …as a circle wheel
+  mel.layout='circle'; el.melLayout.value='circle';               // …as a hollow wheel
   melGateOff(); teardownSynth(); saveMel();
   setChord('G','fist');
   toast('Creep ready 🎬 ✊G ☝B ✌C 🤟Cm · electric · left hand: Smooth Lead in G');
