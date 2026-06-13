@@ -325,7 +325,7 @@
       </div>
     </div>
     <div class="kbd-help" style="margin-top:9px">
-      <b>Bar strip:</b> raise/lower your hand to pick the note; it sounds only while your <b>index finger is up</b>. <b>Circle wheel:</b> notes are slices of a hollow ring — the empty centre is silence, so rest your hand in the middle, push <b>outward into a slice</b> to play it, and pull back in to stop or to <b>jump over notes without sounding them</b> (like lifting your hand off a piano). No finger rules on the wheel — radius is the articulation. Switch Pitch mode to <i>Continuous</i> for every microtone with a live tuner. The melody hand is drawn in blue and never triggers chords.
+      <b>Bar strip:</b> raise/lower your hand to pick the note; it sounds only while your <b>index finger is up</b>. <b>Circle wheel:</b> your <b>index fingertip</b> is the pointer. Touch a slice to play its note, slide along the band for legato steps. The hollow centre is a <b>sustain pedal</b> — pull the fingertip in and the note holds while you reposition (its name shows in the middle). Move the fingertip <b>outside the wheel</b> to release the note. Jumps over notes go through the centre, so nothing sounds in between. Switch Pitch mode to <i>Continuous</i> for every microtone with a live tuner. The melody hand is drawn in blue and never triggers chords.
     </div>
   </div>
 
@@ -777,7 +777,7 @@ function laneCount(){
 }
 
 /* hollow wheel geometry, in height-fraction units (drawing and gating share these) */
-const WHEEL={ RO:0.40, RI:0.20, onR:0.215, offR:0.18 };
+const WHEEL={ RO:0.40, RI:0.20, onR:0.215, offR:0.18, stopR:0.43 };
 const mel={ on:false, inst:'sax', hand:'left', root:9, scale:'minor', oct:3, vol:0.55,
             mode:'snap', range:2,                       // 'snap' = one clean note per lane
             custom:'', customMidis:[],                  // user-defined note ring
@@ -904,7 +904,13 @@ function melodyFrame(h){
     const cx = mel.hand==='left'?0.28:0.72, cy=0.5;
     const dx=(mel.emaX-cx)*asp, dy=mel.emaCY-cy;
     const d=Math.hypot(dx,dy);
-    if(mel.gate ? d<WHEEL.offR : d<WHEEL.onR){   // inside the hole (with hysteresis)
+    if(mel.gate ? d<WHEEL.offR : d<WHEEL.onR){
+      // hollow centre = sustain pedal: the playing note HOLDS while you reposition
+      mel.zoneCand=-1; mel.zoneCandN=0;
+      return {mode:'snap', zone: mel.gate ? mel.curZone : -1};
+    }
+    if(d > (mel.gate ? WHEEL.stopR : WHEEL.stopR-0.02)){
+      // beyond the outer edge = release the note
       melGateOff();
       return {mode:'snap', zone:-1};
     }
@@ -1279,7 +1285,10 @@ function drawOverlay(chordLm, st, melLm, melInfo){
     c.beginPath(); c.arc(cx,cy,R,0,7); c.stroke();
     c.strokeStyle = mel.gate ? 'rgba(240,179,94,.35)' : 'rgba(255,255,255,.30)';
     c.beginPath(); c.arc(cx,cy,Ri,0,7); c.stroke();
-    if(!mel.gate){
+    if(mel.gate && mel.curZone>=0){
+      c.fillStyle='#f0b35e'; c.font='bold 17px Inter,sans-serif';
+      c.fillText(zoneName(mel.curZone), cx, cy);          // held/playing note, centre stage
+    }else{
       c.fillStyle='rgba(255,255,255,.45)'; c.font='11px Inter,sans-serif';
       c.fillText('rest', cx, cy);
     }
